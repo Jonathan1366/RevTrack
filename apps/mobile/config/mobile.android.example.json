@@ -1,0 +1,6 @@
+{
+  "API_URL": "",
+  "DEMO_API_TOKEN": "",
+  "MAPBOX_ACCESS_TOKEN": "pk.replace-with-your-public-mapbox-token",
+  "MAPBOX_STYLE_URI": "mapbox://styles/mapbox/standard"
+}
