@@ -1,0 +1,6 @@
+{
+  "API_URL": "https://api-staging.revtrack.example",
+  "DEMO_API_TOKEN": "replace-with-staging-user-token",
+  "MAPBOX_ACCESS_TOKEN": "pk.replace-with-public-mapbox-token",
+  "MAPBOX_STYLE_URI": "mapbox://styles/mapbox/standard"
+}
