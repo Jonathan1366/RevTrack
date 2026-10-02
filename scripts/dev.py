@@ -117,6 +117,7 @@ def main():
         print('Ctrl-C menghentikan server. Kredensial tidak dicetak dan tidak masuk Git.', flush=True)
         mobile = None
         if args.mobile:
+            assert platform is not None
             if platform.startswith('android'): android_bridge(args.mobile)
             mobile = subprocess.Popen(
                 ['flutter', 'run', '-d', args.mobile, '--dart-define-from-file='+str(config_path)],
