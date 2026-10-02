@@ -4,7 +4,7 @@ RevTrack adalah aplikasi **mobile Flutter Android/iOS** dengan backend Go. Launc
 
 ## Jalankan aplikasi ponsel
 
-Prasyarat: Flutter, Go 1.25+, Python 3, Android SDK dan platform-tools; untuk iOS diperlukan Xcode lengkap. Dari root:
+Prasyarat: Flutter 3.47.6 stable, JDK 27, Go 1.27.1+, Python 3, Android SDK dan platform-tools; untuk iOS diperlukan Xcode lengkap. Dari root:
 
 ```bash
 cd apps/mobile
@@ -23,7 +23,7 @@ python3 scripts/dev.py --mobile emulator-5554
 
 Gunakan ID persis dari `flutter devices`, bukan nama tampilan. Android emulator atau ponsel Android terhubung USB menggunakan `adb reverse tcp:8080 tcp:8080` yang diatur launcher untuk perangkat itu saja. API tetap bind loopback laptop; debug Android mengizinkan HTTP development. iOS simulator dapat memakai loopback. Launcher menolak iPhone fisik pada mode lokal ini karena memerlukan signing dan API development HTTPS tersendiri.
 
-Pengujian runtime emulator/perangkat diserahkan kepada Anda sesuai permintaan. Perintah di atas adalah panduan pengujian manual; hasil build dan pemeriksaan software dicatat terpisah dari pengujian native Mapbox.
+Hasil build dan pemeriksaan runtime yang sudah dijalankan dicatat di [catatan verifikasi](06-verification.md).
 
 Launcher membangun Go API/simulator, membuat token demo lokal, dan memanggil `flutter run` dengan konfigurasi file. Token perangkat hanya diberikan ke backend/simulator, tidak ke aplikasi. Ctrl-C menghentikan proses milik launcher; log API/simulator berada di `.local/`. Restart mempertahankan state `.local/fleet-state.json`. `--no-simulator` mempertahankan posisi statis. Port terpakai ditolak tanpa menghentikan server lain.
 
@@ -35,6 +35,44 @@ REVTRACK_DATA_FILE="$PWD/.local/fleet-state-manual.json" \
 ```
 
 Jalankan dari root repo. Gunakan satu proses API per snapshot; file ini hanya berisi data demo.
+
+## Jika Gradle gagal menjalankan Flutter
+
+Jika emulator muncul di `flutter devices`, tetapi build gagal pada `:app:compileFlutterBuildDebug` dengan `A problem occurred starting process ... flutter`, periksa penyebab lengkap menggunakan `--stacktrace`. Pada Mac pengembangan, error `Failed to exec spawn helper` muncul karena daemon Gradle masih menjalankan Java 21 setelah Java bawaan Android Studio diganti menjadi Java 25.
+
+Toolchain proyek sudah diperbarui ke Flutter 3.47.6, JDK 27, Gradle 9.8.0, AGP 9.4.1, Kotlin 2.4.20, Mapbox Flutter 3.0.0 dan compile/target SDK 37. Gradle 9.8 mendukung JDK 27 menurut [matriks kompatibilitas Gradle](https://docs.gradle.org/current/userguide/compatibility.html). Modul aplikasi tidak lagi menerapkan plugin Kotlin Android. Flutter Gradle Plugin masih memerlukan `android.newDsl=false`; built-in Kotlin tetap diaktifkan dengan `android.builtInKotlin=true`.
+
+Untuk Mac dengan Homebrew, jalankan dari root repo:
+
+```bash
+brew install openjdk
+flutter upgrade
+flutter config --jdk-dir="$(brew --prefix openjdk)/libexec/openjdk.jdk/Contents/Home"
+cd apps/mobile/android
+JAVA_HOME="$(brew --prefix openjdk)/libexec/openjdk.jdk/Contents/Home" ./gradlew --stop
+cd ../../..
+python3 scripts/dev.py --mobile emulator-5554
+```
+
+Pengaturan `flutter config --jdk-dir` berlaku untuk Flutter di mesin tersebut, termasuk launch dari VS Code. Buka terminal baru atau restart VS Code setelah mengubah `JAVA_HOME`/`PATH`. Upgrade JDK berikutnya harus mengikuti dukungan Gradle dan AGP; jangan menaikkan versi Java sendirian.
+
+## Menyiapkan Simulator iOS
+
+Instal Xcode lengkap dari [App Store](https://apps.apple.com/app/xcode/id497799835). Command Line Tools saja tidak menyediakan iOS Simulator. Pada mesin pengembangan, CocoaPods 1.17.0 sudah dipasang; build iOS tetap memerlukan Xcode dan runtime Simulator.
+
+Setelah instalasi Xcode selesai, ikuti [setup resmi Flutter iOS](https://docs.flutter.dev/platform-integration/ios/setup):
+
+```bash
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -runFirstLaunch
+sudo xcodebuild -license
+xcodebuild -downloadPlatform iOS
+open -a Simulator
+flutter devices
+python3 scripts/dev.py --mobile <simulator-id>
+```
+
+Perintah lisensi meminta Anda membaca dan menyetujui ketentuan Apple. Pada Xcode 27, aplikasi Simulator bernama Device Hub; gunakan `open -a DeviceHub`. Gunakan ID iOS yang benar-benar muncul dari `flutter devices`.
 
 ## Konfigurasi Mapbox
 

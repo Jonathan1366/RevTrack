@@ -1,0 +1,20 @@
+const base=Get("DB5KM",{depth:0});
+const text=(p,name,content,size=14,color="#141735",weight="400")=>Insert(p,{type:"text",name,content,textGrowth:"fixed-width",width:"fill_container",fontFamily:"Inter",fontSize:size,fontWeight:weight,lineHeight:1.5,fill:color});
+const frame=(p,name,props={})=>Insert(p,{type:"frame",name,layout:"vertical",width:"fill_container",height:"fit_content",gap:12,...props});
+const icon=(p,name,glyph,color="#686D82",size=20)=>Insert(p,{type:"icon",name,library:"lucide",icon:glyph,width:size,height:size,fill:color});
+appIcon=Insert(document,{type:"frame",name:"RevTrack / App icon master",x:base.x+3100,y:base.y,width:512,height:512,layout:"horizontal",alignItems:"center",justifyContent:"center",fill:"#141735",placeholder:true});
+const descendants={};
+for(const n of Get("y4noKs",{depth:1}).children){if(n.type==="path")descendants[n.id]={x:n.x*1.6,y:n.y*1.6,width:n.width*1.6,height:n.height*1.6,fill:n.fill==="#141735"?"#FFFFFF":"#977CFF"};}
+Insert(appIcon,{type:"ref",name:"RevTrack mark on navy",ref:"y4noKs",width:384,height:384,descendants});Update(appIcon,{placeholder:false});
+const map=Insert(document,{type:"frame",name:"RevTrack / Peta kendaraan",x:base.x+2820,y:base.y+760,width:390,height:"fit_content",layout:"vertical",gap:0,fill:"#F7F7FA",clip:true,placeholder:true,cornerRadius:24});
+const top=frame(map,"Map header",{height:104,padding:20,fill:"#FFFFFF",gap:4});text(top,"Clock","9:41",12);text(top,"Map title","Peta kendaraan",22,"#141735","700");
+const search=frame(map,"Destination search",{padding:20});const field=frame(search,"Search field",{layout:"horizontal",padding:14,fill:"#FFFFFF",cornerRadius:12});icon(field,"Search icon","search");text(field,"Search destination hint","Cari alamat atau tempat",14,"#686D82");
+const m=frame(map,"Jakarta schematic viewport",{height:380,layout:"none",fill:"#EAEFEC",clip:true});
+for(const[x,y,w,h]of[[0,65,390,10],[0,165,390,10],[0,290,390,10],[78,0,10,380],[246,0,10,380]])Insert(m,{type:"rectangle",name:"Street grid",x,y,width:w,height:h,fill:"#FFFFFF"});
+Insert(m,{type:"rectangle",name:"Route segment vertical",x:162,y:90,width:5,height:140,fill:"#5938D6",cornerRadius:3});Insert(m,{type:"rectangle",name:"Route segment horizontal",x:162,y:226,width:90,height:5,fill:"#5938D6",cornerRadius:3});
+for(const[x,y,glyph,color]of[[152,70,"car","#5938D6"],[235,210,"map-pin","#18765C"],[318,35,"layers","#686D82"],[318,315,"locate-fixed","#5938D6"]])Insert(m,{type:"icon",name:glyph,x,y,width:28,height:28,library:"lucide",icon:glyph,fill:color});
+Insert(m,{type:"text",name:"Map area label",x:25,y:330,content:"Jakarta · peta skematik demo",fontFamily:"Inter",fontSize:11,fill:"#686D82"});
+const sheet=frame(map,"Vehicle and route sheet",{padding:20,fill:"#FFFFFF",gap:14});text(sheet,"Selected vehicle","B 1248 REV",18,"#141735","700");text(sheet,"Vehicle model","Hyundai IONIQ 5 · Berjalan",13,"#686D82");text(sheet,"Location","Jl. Jenderal Sudirman, Jakarta",14);text(sheet,"Map controls","Lalu lintas       Tampilan 3D       Satelit",13,"#5938D6","600");text(sheet,"Routes note","Cari tujuan untuk melihat rute dan estimasi perjalanan.",13,"#686D82");Insert(sheet,{type:"ref",name:"Detail kendaraan",ref:"ZvnIy",width:"fill_container",descendants:{"FJVze":{content:"Detail kendaraan"}}});Update(map,{placeholder:false});
+Print({appIcon,map});
+Export([appIcon],"png","/Users/jonathanfarelemanuel/Downloads/RevTracker/design/exports/app-icon",{scale:2});
+TakeScreenshot([appIcon,map]);

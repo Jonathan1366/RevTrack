@@ -1,25 +1,31 @@
 import 'package:flutter/material.dart';
+import '../widgets/glass_surface.dart';
 
-const ink = Color(0xFF14243D);
-const muted = Color(0xFF62748A);
-const green = Color(0xFF1764EE); // RevTrack primary electric blue.
-const mint = Color(0xFFEBF2FF);
-const lime = Color(0xFFB4D5FF);
-const canvasColor = Color(0xFFF5F7FB);
-const line = Color(0xFFE5EBF3);
-const amber = Color(0xFFC88520);
-const red = Color(0xFFC95D4F);
+const ink = Color(0xFF141735);
+const muted = Color(0xFF686D82);
+const green = Color(
+  0xFF5938D6,
+); // Brand accent; retained name for existing widgets.
+const mint = Color(0xFFF0ECFC);
+const lime = Color(0xFFD8CCFF);
+const canvasColor = Color(0xFFF7F7FA);
+const line = Color(0xFFE7E7EE);
+const amber = Color(0xFF966016);
+const red = Color(0xFFB43C48);
+const success = Color(0xFF18765C);
+const numericStyle = TextStyle(fontFeatures: [FontFeature.tabularFigures()]);
 
 ThemeData revTheme() => ThemeData(
   useMaterial3: true,
   scaffoldBackgroundColor: canvasColor,
   colorScheme: ColorScheme.fromSeed(seedColor: green, surface: Colors.white),
+  visualDensity: VisualDensity.standard,
   fontFamily: 'Inter',
   textTheme: const TextTheme(
     headlineLarge: TextStyle(
       fontSize: 32,
       fontWeight: FontWeight.w700,
-      letterSpacing: -1.3,
+      letterSpacing: -.9,
       color: ink,
     ),
     headlineMedium: TextStyle(
@@ -39,8 +45,8 @@ ThemeData revTheme() => ThemeData(
       fontWeight: FontWeight.w700,
       color: ink,
     ),
-    bodyMedium: TextStyle(fontSize: 13, height: 1.5, color: ink),
-    bodySmall: TextStyle(fontSize: 11, height: 1.4, color: muted),
+    bodyMedium: TextStyle(fontSize: 14, height: 1.5, color: ink),
+    bodySmall: TextStyle(fontSize: 12, height: 1.4, color: muted),
   ),
   inputDecorationTheme: InputDecorationTheme(
     filled: true,
@@ -51,7 +57,15 @@ ThemeData revTheme() => ThemeData(
       borderRadius: BorderRadius.circular(12),
       borderSide: BorderSide.none,
     ),
-    hintStyle: const TextStyle(fontSize: 12, color: muted),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: line),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: green, width: 2),
+    ),
+    hintStyle: const TextStyle(fontSize: 13, color: muted),
   ),
   dividerTheme: const DividerThemeData(color: line, thickness: 1),
   filledButtonTheme: FilledButtonThemeData(
@@ -59,9 +73,41 @@ ThemeData revTheme() => ThemeData(
       backgroundColor: green,
       foregroundColor: Colors.white,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
+      minimumSize: const Size(48, 48),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
     ),
+  ),
+  outlinedButtonTheme: OutlinedButtonThemeData(
+    style: OutlinedButton.styleFrom(
+      foregroundColor: ink,
+      minimumSize: const Size(48, 48),
+      side: const BorderSide(color: line),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+    ),
+  ),
+  textButtonTheme: TextButtonThemeData(
+    style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+  ),
+  navigationBarTheme: const NavigationBarThemeData(
+    elevation: 0,
+    indicatorColor: mint,
+    labelTextStyle: WidgetStatePropertyAll(
+      TextStyle(fontFamily: 'Inter', fontSize: 11, fontWeight: FontWeight.w600),
+    ),
+  ),
+  bottomSheetTheme: const BottomSheetThemeData(
+    backgroundColor: Colors.white,
+    surfaceTintColor: Colors.transparent,
+    showDragHandle: true,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+  ),
+  snackBarTheme: SnackBarThemeData(
+    behavior: SnackBarBehavior.floating,
+    backgroundColor: ink,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
   ),
 );
 
@@ -76,13 +122,11 @@ class Surface extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final Color color;
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => GlassSurface(
     padding: padding,
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: line),
-    ),
+    radius: 24,
+    refract: false,
+    tint: color == Colors.white ? null : color,
     child: child,
   );
 }
@@ -126,9 +170,10 @@ class Tag extends StatelessWidget {
 }
 
 Color statusColor(String status) => switch (status) {
-  'moving' => green,
+  'moving' => success,
   'idle' => amber,
   'charging' => green,
-  'parked' => amber,
+  'parked' => muted,
+  'offline' => red,
   _ => muted,
 };

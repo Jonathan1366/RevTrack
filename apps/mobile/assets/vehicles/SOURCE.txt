@@ -1,0 +1,4 @@
+Imported from https://github.com/Jonathan1366/RevAuto
+Commit: 4cc40f47fcef3400851c2de62745e5a6ce83620e
+Vehicle images: see ATTRIBUTION.txt
+Source code: see REVAUTO_LICENSE.txt

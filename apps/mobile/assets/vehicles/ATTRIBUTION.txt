@@ -1,0 +1,87 @@
+RevAuto vehicle photography credits
+===================================
+
+The vehicle photographs below are bundled locally for the fleet showcase.
+No endorsement by the photographers, Wikimedia Foundation, or manufacturers is implied.
+
+BYD M6
+Photo: User3204
+Source: https://commons.wikimedia.org/wiki/File:2024_BYD_M6_(front).jpg
+License: Creative Commons Attribution-ShareAlike 4.0
+https://creativecommons.org/licenses/by-sa/4.0/
+
+BYD Atto 3
+Photo: Charles
+Source: https://commons.wikimedia.org/wiki/File:BYD_Atto_3_(2024)_(54734025568).jpg
+License: CC0 1.0
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Hyundai Ioniq 5
+Photo: TTTNIS
+Source: https://commons.wikimedia.org/wiki/File:Hyundai_Ioniq_5.jpg
+License: CC0 1.0
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Wuling Air EV
+Photo: JustAnotherCarDesigner
+Source: https://commons.wikimedia.org/wiki/File:Wuling_Air_EV_001.jpg
+License: CC0 1.0
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Wuling BinguoEV
+Photo: Andra Febrian
+Source: https://commons.wikimedia.org/wiki/File:2024_Wuling_BinguoEV_Long_Range_(Indonesia)_front_view.jpg
+License: Creative Commons Attribution-ShareAlike 4.0
+https://creativecommons.org/licenses/by-sa/4.0/
+
+VinFast VF 5
+Photo: Bún bòa
+Source: https://commons.wikimedia.org/wiki/File:VinFast_VF5.jpg
+License: CC0 1.0
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Toyota Avanza
+Photo: Wilzz99
+Source: https://commons.wikimedia.org/wiki/File:2014_Toyota_Avanza_1.3_E_wagon_(F651RM;_01-28-2019),_South_Tangerang.jpg
+License: Creative Commons Attribution-ShareAlike 4.0
+https://creativecommons.org/licenses/by-sa/4.0/
+
+Toyota Kijang Innova Zenix
+Photo: RichardSummersault
+Source: https://commons.wikimedia.org/wiki/File:Toyota_Kijang_Innova_Zenix_(Front),_Jakarta,_Indonesia.jpg
+License: CC0 1.0
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Honda Brio
+Photo: Rocking Cars
+Source: https://commons.wikimedia.org/wiki/File:Honda_Brio_(13981960395).jpg
+License: Creative Commons Attribution 2.0
+https://creativecommons.org/licenses/by/2.0/
+
+
+Sketchfab 3D models and thumbnails
+==================================
+
+Interactive models are embedded directly from Sketchfab. Local poster images were
+obtained from Sketchfab's official oEmbed metadata for their corresponding model.
+The model page and creator are also linked beside every interactive viewer.
+
+VinFast VF6, VF8, and VF9
+Creator: Leo Tran
+https://sketchfab.com/Leotran07
+
+2024 BYD Sealion 7, Seal, Seagull, and Dolphin
+Creator: Ddiaz Design
+https://sketchfab.com/ddiaz-design
+
+Hyundai Palisade 2020 and Hyundai Ioniq 5 2022
+Creator: SQUIR3D
+https://sketchfab.com/SQUIR3D
+
+Tesla Model S
+Creator: arloc
+https://sketchfab.com/arloc
+
+Tesla Model Y White with interior
+Creator: dragosburian
+https://sketchfab.com/dragosburian

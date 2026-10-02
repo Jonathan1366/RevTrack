@@ -3,6 +3,7 @@ import 'package:pointer_interceptor/pointer_interceptor.dart';
 import '../core/design.dart';
 import '../core/fleet.dart';
 import 'reports.dart';
+import 'feedback.dart';
 
 String readableError(Object error) =>
     error.toString().replaceFirst('Bad state: ', '');
@@ -29,6 +30,7 @@ class _OperationsPageState extends State<OperationsPage> {
   List<Map<String, dynamic>> bookings = [], orders = [], audit = [];
   bool busy = false;
   String? error;
+  final pendingMutations = <String>{};
   @override
   void initState() {
     super.initState();
@@ -75,39 +77,51 @@ class _OperationsPageState extends State<OperationsPage> {
   }
 
   Future<void> mutate(String path) async {
-    final approved = await showDialog<bool>(
-      context: context,
-      builder: (context) => PointerInterceptor(
-        child: AlertDialog(
-          title: const Text('Konfirmasi pembaruan'),
-          content: Text(
-            path.endsWith('return')
-                ? 'Catat pengembalian unit ini? Catatan akan tersimpan dalam audit server.'
-                : 'Tandai pekerjaan servis ini selesai?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Batal'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Konfirmasi'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (approved != true || !mounted) return;
+    if (pendingMutations.contains(path)) return;
+    setState(() => pendingMutations.add(path));
     try {
-      await const FleetApi().request(path, body: {});
-      await load();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(readableError(e))));
+      final approved = await showDialog<bool>(
+        context: context,
+        builder: (context) => PointerInterceptor(
+          child: AlertDialog(
+            title: const Text('Konfirmasi pembaruan'),
+            content: Text(
+              path.endsWith('return')
+                  ? 'Catat pengembalian unit ini? Catatan akan tersimpan dalam audit server.'
+                  : 'Tandai pekerjaan servis ini selesai?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Batal'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Konfirmasi'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (approved != true || !mounted) return;
+      try {
+        await const FleetApi().request(path, body: {});
+        if (mounted) {
+          showOutcome(
+            context,
+            path.endsWith('return')
+                ? 'Pengembalian kendaraan tercatat.'
+                : 'Servis ditandai selesai.',
+          );
+        }
+        await load();
+      } catch (e) {
+        if (mounted) {
+          showOutcome(context, readableError(e), failed: true);
+        }
       }
+    } finally {
+      if (mounted) setState(() => pendingMutations.remove(path));
     }
   }
 
@@ -119,7 +133,13 @@ class _OperationsPageState extends State<OperationsPage> {
         child: _CreateOperation(vehicles: widget.vehicles, service: tab == 1),
       ),
     );
-    if (result == true && mounted) load();
+    if (result == true && mounted) {
+      showOutcome(
+        context,
+        tab == 0 ? 'Booking tersimpan.' : 'Jadwal servis tersimpan.',
+      );
+      load();
+    }
   }
 
   @override
@@ -127,7 +147,7 @@ class _OperationsPageState extends State<OperationsPage> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       const Text(
-        'OPERATIONS WORKSPACE',
+        'REV RENTAL · JAKARTA',
         style: TextStyle(
           color: green,
           fontSize: 10,
@@ -136,13 +156,10 @@ class _OperationsPageState extends State<OperationsPage> {
         ),
       ),
       const SizedBox(height: 9),
-      Text(
-        'Dari siap jalan, sampai kembali.',
-        style: Theme.of(context).textTheme.headlineMedium,
-      ),
+      Text('Operasi', style: Theme.of(context).textTheme.headlineMedium),
       const SizedBox(height: 10),
       const Text(
-        'Booking, kesiapan unit, dan servis tersambung dalam satu alur.',
+        'Kelola rental, jadwal servis, dan catatan aktivitas.',
         style: TextStyle(color: muted),
       ),
       const SizedBox(height: 24),
@@ -166,10 +183,10 @@ class _OperationsPageState extends State<OperationsPage> {
             children: [
               Icon(Icons.link, color: green),
               SizedBox(height: 12),
-              Text('Hubungkan workspace ke API'),
+              Text('Data operasional belum tersedia'),
               SizedBox(height: 6),
               Text(
-                'Jalankan scripts/dev.py untuk mencoba booking, penugasan, servis, dan audit yang tersimpan di backend.',
+                'Hubungkan layanan RevTrack untuk mengelola rental dan jadwal servis.',
                 style: TextStyle(color: muted),
               ),
             ],
@@ -212,7 +229,7 @@ class _OperationsPageState extends State<OperationsPage> {
           if (bookings.isEmpty && !busy)
             const _Empty(
               icon: Icons.event_available_outlined,
-              title: 'Ruang untuk perjalanan berikutnya.',
+              title: 'Belum ada booking',
               body:
                   'Buat booking pertama. Sistem memeriksa bentrok jadwal dan kesiapan servis unit.',
             ),
@@ -252,14 +269,16 @@ class _OperationsPageState extends State<OperationsPage> {
                     if (booking['status'] == 'booked')
                       Align(
                         alignment: Alignment.centerRight,
-                        child: TextButton.icon(
+                        child: ActionFeedbackButton(
                           onPressed: () =>
                               mutate('/v1/bookings/${booking['id']}/return'),
-                          icon: const Icon(
-                            Icons.assignment_return_outlined,
-                            size: 17,
-                          ),
-                          label: const Text('Catat pengembalian'),
+                          phase:
+                              pendingMutations.contains(
+                                '/v1/bookings/${booking['id']}/return',
+                              )
+                              ? ActionPhase.busy
+                              : ActionPhase.ready,
+                          label: 'Catat pengembalian',
                         ),
                       ),
                   ],
@@ -271,7 +290,7 @@ class _OperationsPageState extends State<OperationsPage> {
           if (orders.isEmpty && !busy)
             const _Empty(
               icon: Icons.build_circle_outlined,
-              title: 'Armada siap, operasi tenang.',
+              title: 'Belum ada jadwal servis',
               body:
                   'Buat pekerjaan servis dengan unit dan tugas yang jelas. Selesaikan ketika pemeriksaan sudah dilakukan.',
             ),
@@ -304,14 +323,16 @@ class _OperationsPageState extends State<OperationsPage> {
                     if (order['status'] == 'open')
                       Align(
                         alignment: Alignment.centerRight,
-                        child: TextButton.icon(
+                        child: ActionFeedbackButton(
                           onPressed: () =>
                               mutate('/v1/work-orders/${order['id']}/complete'),
-                          icon: const Icon(
-                            Icons.check_circle_outline,
-                            size: 17,
-                          ),
-                          label: const Text('Selesaikan pekerjaan'),
+                          phase:
+                              pendingMutations.contains(
+                                '/v1/work-orders/${order['id']}/complete',
+                              )
+                              ? ActionPhase.busy
+                              : ActionPhase.ready,
+                          label: 'Selesaikan pekerjaan',
                         ),
                       ),
                   ],
@@ -323,9 +344,9 @@ class _OperationsPageState extends State<OperationsPage> {
           if (audit.isEmpty && !busy)
             const _Empty(
               icon: Icons.history,
-              title: 'Setiap keputusan meninggalkan jejak.',
+              title: 'Belum ada aktivitas',
               body:
-                  'Perubahan driver, tinjauan alert, booking, dan servis akan muncul di sini.',
+                  'Perubahan pengemudi, peringatan, rental, dan servis akan muncul di sini.',
             ),
           for (final item in audit.reversed)
             Padding(
@@ -447,24 +468,28 @@ class _CreateOperationState extends State<_CreateOperation> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              DropdownButtonFormField<String>(
-                initialValue: vehicleId,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Unit kendaraan'),
-                items: widget.vehicles
+              DropdownMenuFormField<String>(
+                initialSelection: vehicleId,
+                expandedInsets: EdgeInsets.zero,
+                enabled: !saving,
+                enableFilter: true,
+                label: const Text('Kendaraan'),
+                menuHeight: 260,
+                dropdownMenuEntries: widget.vehicles
                     .map(
-                      (v) => DropdownMenuItem(
+                      (v) => DropdownMenuEntry(
                         value: v.id,
-                        child: Text(
+                        label: '${v.plate} · ${v.name}',
+                        labelWidget: Text(
                           '${v.plate} · ${v.name}',
-                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
                         ),
                       ),
                     )
                     .toList(),
-                onChanged: saving
-                    ? null
-                    : (v) => setState(() => vehicleId = v!),
+                onSelected: (v) {
+                  if (v != null) setState(() => vehicleId = v);
+                },
               ),
               const SizedBox(height: 18),
               TextFormField(
@@ -526,7 +551,7 @@ class _CreateOperationState extends State<_CreateOperation> {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Jadwal bentrok dan unit dalam servis akan ditolak server.',
+                  'Kendaraan harus tersedia pada jadwal yang dipilih.',
                   style: TextStyle(fontSize: 11, color: muted),
                 ),
               ],
@@ -545,9 +570,11 @@ class _CreateOperationState extends State<_CreateOperation> {
         onPressed: saving ? null : () => Navigator.pop(context, false),
         child: const Text('Batal'),
       ),
-      FilledButton(
-        onPressed: saving ? null : save,
-        child: Text(saving ? 'Menyimpan…' : 'Simpan'),
+      ActionFeedbackButton(
+        label: 'Simpan',
+        busyLabel: 'Menyimpan…',
+        phase: saving ? ActionPhase.busy : ActionPhase.ready,
+        onPressed: save,
       ),
     ],
   );

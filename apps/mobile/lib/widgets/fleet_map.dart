@@ -167,6 +167,7 @@ class _NativeFleetMapState extends State<NativeFleetMap> {
   mb.MapboxMap? map;
   mb.Cancelable? taps;
   bool failed = false;
+  bool loaded = false;
   mb.CircleAnnotationManager? manager;
   final annotations = <String, mb.CircleAnnotation>{};
   bool syncing = false;
@@ -247,11 +248,41 @@ class _NativeFleetMapState extends State<NativeFleetMap> {
       );
       routeManager = await controller.annotations
           .createPolylineAnnotationManager();
+      await controller.scaleBar.updateSettings(
+        mb.ScaleBarSettings(enabled: false),
+      );
+      await controller.compass.updateSettings(
+        mb.CompassSettings(marginTop: 12, marginRight: 12),
+      );
       await syncAnnotations();
       await syncRoute();
       await syncTraffic();
     } catch (_) {
       if (mounted) setState(() => failed = true);
+    }
+  }
+
+  Future<void> configureStyle() async {
+    final controller = map;
+    if (controller == null) return;
+    try {
+      if (widget.styleUri.startsWith('mapbox://styles/mapbox/standard')) {
+        await controller.setStyleImportConfigProperties('basemap', {
+          'lightPreset': 'day',
+          'showPointOfInterestLabels': false,
+          'showTransitLabels': false,
+        });
+      } else {
+        // Keep the workspace's chosen style; reduce landmark clutter so fleet
+        // markers are easier to locate. Never hide roads or attribution.
+        for (final id in ['poi-label', 'transit-label', 'road-number-shield']) {
+          if (await controller.styleLayerExists(id)) {
+            await controller.setStyleLayerProperty(id, 'visibility', 'none');
+          }
+        }
+      }
+    } catch (_) {
+      // Custom styles and older basemaps can expose a different configuration.
     }
   }
 
@@ -362,13 +393,13 @@ class _NativeFleetMapState extends State<NativeFleetMap> {
   Future<void> syncTraffic() async {
     if (map == null || !mounted) return;
     try {
-      final hasLayer = await map!.style.styleLayerExists('revtrack-traffic');
+      final hasLayer = await map!.styleLayerExists('revtrack-traffic');
       if (!widget.traffic) {
-        if (hasLayer) await map!.style.removeStyleLayer('revtrack-traffic');
+        if (hasLayer) await map!.removeStyleLayer('revtrack-traffic');
         return;
       }
-      if (!await map!.style.styleSourceExists('revtrack-traffic-source')) {
-        await map!.style.addSource(
+      if (!await map!.styleSourceExists('revtrack-traffic-source')) {
+        await map!.addSource(
           mb.VectorSource(
             id: 'revtrack-traffic-source',
             url: 'mapbox://mapbox.mapbox-traffic-v1',
@@ -376,7 +407,7 @@ class _NativeFleetMapState extends State<NativeFleetMap> {
         );
       }
       if (!hasLayer) {
-        await map!.style.addLayer(
+        await map!.addLayer(
           mb.LineLayer(
             id: 'revtrack-traffic',
             sourceId: 'revtrack-traffic-source',
@@ -385,23 +416,19 @@ class _NativeFleetMapState extends State<NativeFleetMap> {
             lineOpacity: .75,
           ),
         );
-        await map!.style.setStyleLayerProperty(
-          'revtrack-traffic',
-          'line-color',
-          [
-            'match',
-            ['get', 'congestion'],
-            'low',
-            '#51b88a',
-            'moderate',
-            '#f4b447',
-            'heavy',
-            '#ea7657',
-            'severe',
-            '#c7445b',
-            '#9ab4ce',
-          ],
-        );
+        await map!.setStyleLayerProperty('revtrack-traffic', 'line-color', [
+          'match',
+          ['get', 'congestion'],
+          'low',
+          '#51b88a',
+          'moderate',
+          '#f4b447',
+          'heavy',
+          '#ea7657',
+          'severe',
+          '#c7445b',
+          '#9ab4ce',
+        ]);
       }
     } catch (_) {
       /* Coverage and layer availability vary; route ETA is separate. */
@@ -417,30 +444,95 @@ class _NativeFleetMapState extends State<NativeFleetMap> {
   @override
   Widget build(BuildContext context) {
     if (failed) {
-      return const ColoredBox(
+      return ColoredBox(
         color: mint,
         child: Center(
           child: Padding(
             padding: EdgeInsets.all(32),
-            child: Text(
-              'Peta tidak dapat dimuat. Periksa koneksi, token, dan akses style Mapbox.',
-              textAlign: TextAlign.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Peta belum bisa dimuat. Coba periksa koneksi lalu muat ulang.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                FilledButton.tonalIcon(
+                  onPressed: () {
+                    taps?.cancel();
+                    annotations.clear();
+                    map = null;
+                    manager = null;
+                    routeManager = null;
+                    routeAnnotation = null;
+                    destinationAnnotation = null;
+                    setState(() {
+                      failed = false;
+                      loaded = false;
+                    });
+                  },
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Muat ulang peta'),
+                ),
+              ],
             ),
           ),
         ),
       );
     }
-    return mb.MapWidget(
-      styleUri: widget.styleUri,
-      viewport: mb.CameraViewportState(
-        center: mb.Point(coordinates: mb.Position(106.821, -6.214)),
-        zoom: 11.8,
-        pitch: widget.pitch,
-      ),
-      onMapCreated: setup,
-      onMapLoadErrorListener: (_) {
-        if (mounted) setState(() => failed = true);
-      },
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: mb.MapWidget(
+            styleUri: widget.styleUri,
+            viewport: mb.CameraViewportState(
+              center: mb.Point(coordinates: mb.Position(106.821, -6.214)),
+              zoom: 11.8,
+              pitch: widget.pitch,
+            ),
+            onMapCreated: setup,
+            onStyleLoadedListener: (_) {
+              // A loaded style can supply its own camera; restore the selected unit.
+              focus();
+              configureStyle();
+              syncAnnotations();
+              syncRoute();
+              syncTraffic();
+            },
+            onMapLoadedListener: (_) {
+              if (mounted) setState(() => loaded = true);
+            },
+            onMapLoadErrorListener: (_) {
+              if (mounted) setState(() => failed = true);
+            },
+          ),
+        ),
+        if (!loaded)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: ColoredBox(
+                color: canvasColor,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Memuat peta…',
+                        style: TextStyle(color: muted, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

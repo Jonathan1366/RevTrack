@@ -1,17 +1,24 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 import '../core/design.dart';
 import '../core/fleet.dart';
 import 'operations.dart';
+import 'telemetry_chart.dart';
+import 'feedback.dart';
 
 class TelemetryPanel extends StatefulWidget {
   const TelemetryPanel({
     super.key,
     required this.vehicle,
     required this.onChanged,
+    this.api = const FleetApi(),
+    this.pollInterval = const Duration(seconds: 5),
   });
   final Vehicle vehicle;
   final VoidCallback onChanged;
+  final FleetApi api;
+  final Duration pollInterval;
   @override
   State<TelemetryPanel> createState() => _TelemetryPanelState();
 }
@@ -19,12 +26,23 @@ class TelemetryPanel extends StatefulWidget {
 class _TelemetryPanelState extends State<TelemetryPanel> {
   List<Map<String, dynamic>> points = [];
   String? error;
-  int? selected;
-  bool speed = false;
+  bool speed = true;
+  bool loading = false, assigning = false;
+  int windowMinutes = 15, generation = 0;
+  Timer? poller;
   @override
   void initState() {
     super.initState();
     load();
+    if (widget.pollInterval > Duration.zero) {
+      poller = Timer.periodic(widget.pollInterval, (_) => load());
+    }
+  }
+
+  @override
+  void dispose() {
+    poller?.cancel();
+    super.dispose();
   }
 
   @override
@@ -32,7 +50,9 @@ class _TelemetryPanelState extends State<TelemetryPanel> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.vehicle.id != widget.vehicle.id) {
       points = [];
-      selected = null;
+      generation++;
+      loading = false;
+      error = null;
       load();
     } else if (oldWidget.vehicle.lastSeenAt != widget.vehicle.lastSeenAt) {
       load();
@@ -40,28 +60,37 @@ class _TelemetryPanelState extends State<TelemetryPanel> {
   }
 
   Future<void> load() async {
+    if (loading || !mounted) return;
     final vehicleId = widget.vehicle.id;
+    final requestGeneration = generation;
+    setState(() => loading = true);
     try {
-      final result = await const FleetApi().request(
+      final result = await widget.api.request(
         '/v1/vehicles/$vehicleId/telemetry',
       );
-      if (mounted && vehicleId == widget.vehicle.id) {
+      if (mounted && requestGeneration == generation) {
         setState(() {
           points = List<Map<String, dynamic>>.from(result['points']);
           error = null;
-          if (selected != null && selected! >= points.length) selected = null;
         });
       }
     } catch (e) {
-      if (mounted && vehicleId == widget.vehicle.id) {
+      if (mounted && requestGeneration == generation) {
         setState(() => error = readableError(e));
+      }
+    } finally {
+      if (mounted && requestGeneration == generation) {
+        setState(() => loading = false);
       }
     }
   }
 
   Future<void> assign() async {
+    if (assigning) return;
+    final vehicleId = widget.vehicle.id;
+    setState(() => assigning = true);
     try {
-      final result = await const FleetApi().request('/v1/drivers');
+      final result = await widget.api.request('/v1/drivers');
       if (!mounted) return;
       final id = await showDialog<String>(
         context: context,
@@ -89,21 +118,17 @@ class _TelemetryPanelState extends State<TelemetryPanel> {
           ),
         ),
       );
-      if (id == null || !mounted) return;
-      await const FleetApi().assign(widget.vehicle.id, id);
+      if (id == null || !mounted || vehicleId != widget.vehicle.id) return;
+      await widget.api.assign(vehicleId, id);
       if (!mounted) return;
       widget.onChanged();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Penugasan tersimpan. Perubahan tercatat di audit.'),
-        ),
-      );
+      showOutcome(context, 'Pengemudi berhasil ditugaskan.');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(readableError(e))));
+        showOutcome(context, readableError(e), failed: true);
       }
+    } finally {
+      if (mounted) setState(() => assigning = false);
     }
   }
 
@@ -114,169 +139,116 @@ class _TelemetryPanelState extends State<TelemetryPanel> {
         : widget.vehicle.ev
         ? 'batteryPercent'
         : 'fuelPercent';
-    final values = points.map((p) => (p[field] as num?)?.toDouble()).toList();
-    final index = selected ?? (points.isEmpty ? 0 : points.length - 1);
-    final value = points.isEmpty ? null : points[index][field];
-    final stamp = points.isEmpty
-        ? 'Belum ada sampel'
-        : shortTime(points[index]['recordedAt']);
+    final samples = telemetrySamples(points, field);
+    final cutoff = samples.isEmpty || windowMinutes == 0
+        ? null
+        : samples.last.time.subtract(Duration(minutes: windowMinutes));
+    final visible = cutoff == null
+        ? samples
+        : samples.where((s) => !s.time.isBefore(cutoff)).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Expanded(
+            const Expanded(
               child: Text(
-                speed
-                    ? 'Kecepatan GNSS'
-                    : '${widget.vehicle.ev ? 'Energi baterai' : 'Level bahan bakar'} · %',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
+                'Telemetri',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
             ),
-            TextButton(
-              onPressed: () => setState(() => speed = !speed),
-              child: Text(
-                speed ? 'Lihat energi' : 'Lihat kecepatan',
-                style: const TextStyle(fontSize: 11),
+            if (loading && points.isNotEmpty)
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
+            const SizedBox(width: 8),
+            DropdownMenu<int>(
+              width: 150,
+              initialSelection: windowMinutes,
+              selectOnly: true,
+              textStyle: const TextStyle(fontSize: 12),
+              inputDecorationTheme: const InputDecorationTheme(
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+              ),
+              dropdownMenuEntries: const [
+                DropdownMenuEntry(value: 5, label: '5 menit'),
+                DropdownMenuEntry(value: 15, label: '15 menit'),
+                DropdownMenuEntry(value: 0, label: 'Semua data'),
+              ],
+              onSelected: (value) {
+                if (value != null) setState(() => windowMinutes = value);
+              },
             ),
           ],
         ),
-        Text(
-          '${value == null ? '—' : (value as num).toStringAsFixed(1)}${speed ? ' km/jam' : '%'} · $stamp',
-          style: const TextStyle(
-            color: green,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 16),
-        if (error != null)
-          Text(error!, style: const TextStyle(color: red, fontSize: 11))
-        else if (points.isEmpty)
-          const SizedBox(
-            height: 90,
-            child: Center(
-              child: Text(
-                'Menunggu sampel telemetri…',
-                style: TextStyle(color: muted),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: [
+              const ButtonSegment(
+                value: true,
+                label: Text('Kecepatan'),
+                icon: Icon(Icons.speed_outlined, size: 18),
               ),
-            ),
-          )
-        else
-          LayoutBuilder(
-            builder: (context, c) => GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (details) => setState(
-                () => selected =
-                    ((details.localPosition.dx / c.maxWidth) *
-                            (points.length - 1))
-                        .round()
-                        .clamp(0, points.length - 1),
-              ),
-              onHorizontalDragUpdate: (details) => setState(
-                () => selected =
-                    ((details.localPosition.dx / c.maxWidth) *
-                            (points.length - 1))
-                        .round()
-                        .clamp(0, points.length - 1),
-              ),
-              child: SizedBox(
-                height: 100,
-                width: double.infinity,
-                child: CustomPaint(
-                  painter: TelemetryPainter(
-                    values: values,
-                    times: points
-                        .map(
-                          (p) =>
-                              DateTime.tryParse(p['recordedAt']) ??
-                              DateTime(2000),
-                        )
-                        .toList(),
-                    selected: index,
-                    maximum: speed ? 140 : 100,
-                  ),
+              ButtonSegment(
+                value: false,
+                label: Text(widget.vehicle.ev ? 'Baterai' : 'Bahan bakar'),
+                icon: Icon(
+                  widget.vehicle.ev
+                      ? Icons.battery_5_bar_outlined
+                      : Icons.local_gas_station_outlined,
+                  size: 18,
                 ),
               ),
-            ),
+            ],
+            selected: {speed},
+            onSelectionChanged: (value) => setState(() => speed = value.first),
           ),
-        const SizedBox(height: 12),
+        ),
+        const SizedBox(height: 22),
+        if (error != null)
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Telemetri belum bisa dimuat.',
+                  style: TextStyle(color: muted),
+                ),
+              ),
+              TextButton(onPressed: load, child: const Text('Coba lagi')),
+            ],
+          ),
+        if (loading && points.isEmpty)
+          const SizedBox(
+            height: 160,
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else if (points.isNotEmpty || error == null)
+          TelemetryChart(
+            key: ValueKey(widget.vehicle.id),
+            samples: visible,
+            unit: speed ? 'km/jam' : '%',
+          ),
+        const SizedBox(height: 8),
         const Text(
-          'Geser grafik untuk melihat sampel · data simulator/fixture dari server.',
-          style: TextStyle(color: muted, fontSize: 10),
+          'Data simulasi · garis terputus saat pembacaan tidak tersedia.',
+          style: TextStyle(color: muted, fontSize: 11),
         ),
         const SizedBox(height: 14),
-        OutlinedButton.icon(
+        ActionFeedbackButton(
+          label: 'Atur pengemudi',
+          phase: assigning ? ActionPhase.busy : ActionPhase.ready,
           onPressed: assign,
-          icon: const Icon(Icons.person_add_alt_1_outlined, size: 17),
-          label: const Text('Atur pengemudi'),
         ),
       ],
     );
   }
-}
-
-class TelemetryPainter extends CustomPainter {
-  const TelemetryPainter({
-    required this.values,
-    required this.times,
-    required this.selected,
-    required this.maximum,
-  });
-  final List<double?> values;
-  final List<DateTime> times;
-  final int selected;
-  final double maximum;
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (var i = 0; i < 4; i++) {
-      canvas.drawLine(
-        Offset(0, size.height * i / 3),
-        Offset(size.width, size.height * i / 3),
-        Paint()..color = line,
-      );
-    }
-    if (values.isEmpty) return;
-    Offset point(int i) => Offset(
-      values.length == 1
-          ? size.width / 2
-          : i * size.width / (values.length - 1),
-      size.height -
-          (values[i]!.clamp(0, maximum) / maximum) * (size.height - 8) -
-          4,
-    );
-    final paint = Paint()
-      ..color = green
-      ..strokeWidth = 2.7
-      ..strokeCap = StrokeCap.round;
-    for (var i = 0; i < values.length; i++) {
-      if (values[i] == null) continue;
-      canvas.drawCircle(point(i), 2, paint);
-      if (i > 0 &&
-          values[i - 1] != null &&
-          times[i].difference(times[i - 1]).inMinutes < 5) {
-        canvas.drawLine(point(i - 1), point(i), paint);
-      }
-    }
-    if (selected < values.length && values[selected] != null) {
-      final p = point(selected);
-      canvas.drawLine(
-        Offset(p.dx, 0),
-        Offset(p.dx, size.height),
-        Paint()..color = green.withValues(alpha: .2),
-      );
-      canvas.drawCircle(p, 6, Paint()..color = Colors.white);
-      canvas.drawCircle(p, 4, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(TelemetryPainter old) =>
-      old.values != values ||
-      old.selected != selected ||
-      old.maximum != maximum;
 }

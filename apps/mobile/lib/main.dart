@@ -1,4 +1,12 @@
 import 'dart:async';
+import 'package:animations/animations.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'widgets/overview.dart';
+import 'widgets/feedback.dart';
+import 'widgets/welcome.dart';
+import 'widgets/glass_surface.dart';
+import 'widgets/vehicle_card.dart';
+import 'core/google_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
@@ -23,14 +31,35 @@ void main() {
   runApp(const RevTrackApp());
 }
 
-class RevTrackApp extends StatelessWidget {
-  const RevTrackApp({super.key});
+class RevTrackApp extends StatefulWidget {
+  const RevTrackApp({super.key, this.enableWelcomeVideo = true});
+  final bool enableWelcomeVideo;
+  @override
+  State<RevTrackApp> createState() => _RevTrackAppState();
+}
+
+class _RevTrackAppState extends State<RevTrackApp> {
+  final auth = GoogleAuthController();
+  @override
+  void dispose() {
+    auth.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'RevTrack · Fleet intelligence',
     debugShowCheckedModeBanner: false,
     theme: revTheme(),
-    home: const FleetHome(),
+    home: Builder(
+      builder: (context) => WelcomePage(
+        auth: auth,
+        enableVideo: widget.enableWelcomeVideo,
+        onDemo: () => Navigator.of(
+          context,
+        ).push<void>(MaterialPageRoute(builder: (_) => const FleetHome())),
+      ),
+    ),
   );
 }
 
@@ -43,6 +72,8 @@ class FleetHome extends StatefulWidget {
 class _FleetHomeState extends State<FleetHome> {
   int page = 0;
   String query = '', filter = 'Semua';
+  String alertFilter = 'Semua';
+  String fleetOrder = 'plate';
   List<Vehicle> vehicles = demoVehicles;
   List<FleetAlert> alerts = demoAlerts;
   Vehicle selected = demoVehicles.first;
@@ -55,14 +86,14 @@ class _FleetHomeState extends State<FleetHome> {
     'Ringkasan',
     'Armada',
     'Peringatan',
-    'Rev AI',
+    'Analisis',
     'Operasi',
   ];
   static const pageIcons = [
     Icons.space_dashboard_outlined,
     Icons.directions_car_outlined,
     Icons.notifications_none_rounded,
-    Icons.auto_awesome_outlined,
+    Icons.insights_outlined,
     Icons.calendar_month_outlined,
   ];
 
@@ -90,12 +121,13 @@ class _FleetHomeState extends State<FleetHome> {
     setState(() => pendingAlerts.add(alert.id));
     try {
       await const FleetApi().acknowledge(alert.id);
+      if (!mounted) return;
+      setState(() => acknowledged.add(alert.id));
+      showOutcome(context, 'Peringatan ditandai sudah ditinjau.');
       await refresh();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(readableError(e))));
+        showOutcome(context, readableError(e), failed: true);
       }
     } finally {
       if (mounted) setState(() => pendingAlerts.remove(alert.id));
@@ -104,17 +136,31 @@ class _FleetHomeState extends State<FleetHome> {
 
   bool reviewed(FleetAlert alert) =>
       alert.status == 'acknowledged' || acknowledged.contains(alert.id);
-  List<Vehicle> get filtered => vehicles.where((v) {
-    final matches = '${v.plate} ${v.name} ${v.driver}'.toLowerCase().contains(
-      query.toLowerCase(),
+  List<Vehicle> get filtered {
+    final result = vehicles.where((v) {
+      final matches = '${v.plate} ${v.name} ${v.driver}'.toLowerCase().contains(
+        query.toLowerCase(),
+      );
+      return matches &&
+          (filter == 'Semua' ||
+              (filter == 'EV' && v.ev) ||
+              (filter == 'Bensin' && v.powertrain == 'ice') ||
+              (filter == 'Diesel' && v.powertrain == 'diesel') ||
+              (filter == 'Energi rendah' &&
+                  v.energy != null &&
+                  v.energy! < 30) ||
+              v.statusLabel == filter);
+    }).toList();
+    result.sort(
+      (a, b) => switch (fleetOrder) {
+        'energy' => (a.energy ?? 101).compareTo(b.energy ?? 101),
+        'speed' => (b.speed ?? -1).compareTo(a.speed ?? -1),
+        _ => a.plate.compareTo(b.plate),
+      },
     );
-    return matches &&
-        (filter == 'Semua' ||
-            (filter == 'EV' && v.ev) ||
-            (filter == 'Bensin' && v.powertrain == 'ice') ||
-            (filter == 'Diesel' && v.powertrain == 'diesel') ||
-            v.statusLabel == filter);
-  }).toList();
+    return result;
+  }
+
   int get openAlerts =>
       alerts.where((a) => a.status != 'acknowledged' && !reviewed(a)).length;
   Future<void> refresh() async {
@@ -123,7 +169,7 @@ class _FleetHomeState extends State<FleetHome> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Data contoh statis. Hubungkan API_URL dan DEMO_API_TOKEN untuk demo API.',
+            'Mode demo sedang memakai data contoh. Hubungkan layanan RevTrack untuk menerima pembaruan.',
           ),
         ),
       );
@@ -151,7 +197,7 @@ class _FleetHomeState extends State<FleetHome> {
       if (mounted) {
         setState(
           () => apiError =
-              'API tidak terhubung. Menampilkan ${fromApi ? 'snapshot demo terakhir' : 'data contoh lokal'}. Periksa URL, token, dan server.',
+              'Koneksi terputus. Menampilkan ${fromApi ? 'data terakhir' : 'data demo'}. Coba muat ulang.',
         );
       }
     } finally {
@@ -190,99 +236,131 @@ class _FleetHomeState extends State<FleetHome> {
     builder: (context, constraints) {
       final desktop = constraints.maxWidth >= 1100;
       final compact = constraints.maxWidth < 650;
-      return Scaffold(
-        body: SafeArea(
-          child: Row(
-            children: [
-              if (desktop) sidebar(),
-              Expanded(
-                child: Column(
-                  children: [
-                    topbar(compact, desktop),
-                    if (apiError != null)
-                      Material(
-                        color: const Color(0xFFFFF2E0),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 22,
-                            vertical: 10,
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.cloud_off_outlined,
-                                size: 17,
-                                color: amber,
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.dark,
+        child: Scaffold(
+          extendBody: !desktop,
+          body: FleetBackdrop(
+            child: SafeArea(
+              child: Row(
+                children: [
+                  if (desktop) sidebar(),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        topbar(compact, desktop),
+                        if (apiError != null)
+                          Material(
+                            color: const Color(0xFFFFF2E0),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 22,
+                                vertical: 10,
                               ),
-                              const SizedBox(width: 9),
-                              Expanded(
-                                child: Text(
-                                  apiError!,
-                                  style: const TextStyle(fontSize: 11),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.cloud_off_outlined,
+                                    size: 17,
+                                    color: amber,
+                                  ),
+                                  const SizedBox(width: 9),
+                                  Expanded(
+                                    child: Text(
+                                      apiError!,
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: loading ? null : refresh,
+                                    child: const Text('Coba lagi'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            key: ValueKey('page-$page'),
+                            padding: EdgeInsets.all(compact ? 18 : 30),
+                            child: Align(
+                              alignment: Alignment.topCenter,
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 1500,
+                                ),
+                                child: PageTransitionSwitcher(
+                                  transitionBuilder:
+                                      (child, animation, secondaryAnimation) =>
+                                          FadeThroughTransition(
+                                            animation: animation,
+                                            secondaryAnimation:
+                                                secondaryAnimation,
+                                            fillColor: Colors.transparent,
+                                            child: child,
+                                          ),
+                                  duration:
+                                      MediaQuery.disableAnimationsOf(context)
+                                      ? Duration.zero
+                                      : const Duration(milliseconds: 180),
+                                  child: switch (page) {
+                                    0 =>
+                                      loading && !fromApi
+                                          ? const FleetLoading()
+                                          : dashboard(compact, desktop),
+                                    1 => fleetPage(compact),
+                                    2 => alertsPage(compact),
+                                    3 => CopilotPanel(
+                                      vehicles: vehicles,
+                                      alerts: alerts,
+                                      onNavigate: (value) =>
+                                          setState(() => page = value),
+                                    ),
+                                    _ => OperationsPage(
+                                      vehicles: vehicles,
+                                      connected: fromApi,
+                                    ),
+                                  },
                                 ),
                               ),
-                              TextButton(
-                                onPressed: loading ? null : refresh,
-                                child: const Text('Coba lagi'),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        key: ValueKey('page-$page'),
-                        padding: EdgeInsets.all(compact ? 18 : 30),
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 1500),
-                            child: AnimatedSwitcher(
-                              duration: MediaQuery.disableAnimationsOf(context)
-                                  ? Duration.zero
-                                  : const Duration(milliseconds: 180),
-                              child: switch (page) {
-                                0 => dashboard(compact, desktop),
-                                1 => fleetPage(compact),
-                                2 => alertsPage(compact),
-                                3 => CopilotPanel(
-                                  vehicles: vehicles,
-                                  alerts: alerts,
-                                  onNavigate: (value) =>
-                                      setState(() => page = value),
-                                ),
-                                _ => OperationsPage(
-                                  vehicles: vehicles,
-                                  connected: fromApi,
-                                ),
-                              },
-                            ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          bottomNavigationBar: desktop
+              ? null
+              : SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+                    child: GlassSurface(
+                      radius: 26,
+                      child: NavigationBar(
+                        height: 70,
+                        selectedIndex: page,
+                        backgroundColor: Colors.transparent,
+                        elevation: 0,
+                        indicatorColor: mint,
+                        onDestinationSelected: (value) =>
+                            setState(() => page = value),
+                        destinations: List.generate(
+                          pageNames.length,
+                          (i) => NavigationDestination(
+                            icon: Icon(pageIcons[i]),
+                            label: pageNames[i],
                           ),
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        bottomNavigationBar: desktop
-            ? null
-            : NavigationBar(
-                height: 70,
-                selectedIndex: page,
-                backgroundColor: Colors.white,
-                indicatorColor: mint,
-                onDestinationSelected: (value) => setState(() => page = value),
-                destinations: List.generate(
-                  pageNames.length,
-                  (i) => NavigationDestination(
-                    icon: Icon(pageIcons[i]),
-                    label: pageNames[i],
                   ),
                 ),
-              ),
+        ),
       );
     },
   );
@@ -345,7 +423,7 @@ class _FleetHomeState extends State<FleetHome> {
                       ),
                     ),
                     Text(
-                      'Jakarta operations',
+                      'Operasional Jakarta',
                       style: TextStyle(fontSize: 9, color: muted),
                     ),
                   ],
@@ -427,10 +505,10 @@ class _FleetHomeState extends State<FleetHome> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.auto_awesome, color: lime, size: 22),
+              const Icon(Icons.insights_outlined, color: lime, size: 22),
               const SizedBox(height: 13),
               const Text(
-                'Less busywork.\nMore possibilities.',
+                'Prioritas armada',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 15,
@@ -440,7 +518,7 @@ class _FleetHomeState extends State<FleetHome> {
               ),
               const SizedBox(height: 10),
               const Text(
-                'Jelajahi asisten operasi\ndalam mode simulasi.',
+                'Periksa koneksi, energi,\ndan penugasan kendaraan.',
                 style: TextStyle(
                   fontSize: 10,
                   height: 1.5,
@@ -454,7 +532,7 @@ class _FleetHomeState extends State<FleetHome> {
                   children: [
                     Expanded(
                       child: Text(
-                        'Kenali Rev AI',
+                        'Buka analisis',
                         style: TextStyle(
                           color: lime,
                           fontSize: 11,
@@ -492,11 +570,11 @@ class _FleetHomeState extends State<FleetHome> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Fleet administrator',
+                    'Administrator armada',
                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
                   ),
                   Text(
-                    'Demo workspace',
+                    'Mode demo',
                     style: TextStyle(fontSize: 9, color: muted),
                   ),
                 ],
@@ -508,57 +586,88 @@ class _FleetHomeState extends State<FleetHome> {
     ),
   );
 
-  Widget topbar(bool compact, bool desktop) => Container(
-    height: 73,
-    padding: EdgeInsets.symmetric(horizontal: compact ? 18 : 30),
-    decoration: const BoxDecoration(
-      color: Colors.white,
-      border: Border(bottom: BorderSide(color: line)),
-    ),
-    child: Row(
-      children: [
-        if (!desktop)
-          const SizedBox(width: 132, child: Brand(small: true))
-        else ...[
-          const Icon(Icons.grid_view_rounded, size: 15, color: muted),
-          const SizedBox(width: 10),
-          const Text('Workspace', style: TextStyle(color: muted, fontSize: 11)),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12),
-            child: Text('/', style: TextStyle(color: line)),
-          ),
-          Text(
-            pageNames[page],
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-          ),
-        ],
-        const Spacer(),
-        Tag(
-          'DEMO',
-          color: amber,
-          background: const Color(0xFFFFF3DC),
-          icon: Icons.science_outlined,
-        ),
-        if (!compact) ...[
-          const SizedBox(width: 12),
-          Text(
-            fromApi ? 'API · data simulasi' : 'Data contoh · tanpa IoT',
-            style: const TextStyle(fontSize: 10, color: muted),
-          ),
-        ],
-        const SizedBox(width: 10),
-        IconButton(
-          tooltip: 'Muat ulang data demo',
-          onPressed: loading ? null : refresh,
-          icon: loading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+  Widget topbar(bool compact, bool desktop) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+    child: GlassSurface(
+      radius: 24,
+      child: SizedBox(
+        height: 64,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 22),
+          child: Row(
+            children: [
+              if (!desktop)
+                SizedBox(
+                  width:
+                      MediaQuery.sizeOf(context).width < 370 ||
+                          MediaQuery.textScalerOf(context).scale(12) > 15
+                      ? 38
+                      : 132,
+                  child:
+                      MediaQuery.sizeOf(context).width < 370 ||
+                          MediaQuery.textScalerOf(context).scale(12) > 15
+                      ? SvgPicture.asset(
+                          'assets/brand/revtrack-mark.svg',
+                          width: 28,
+                          height: 28,
+                        )
+                      : const Brand(small: true),
                 )
-              : const Icon(Icons.refresh_rounded, size: 19),
+              else ...[
+                const Icon(Icons.grid_view_rounded, size: 15, color: muted),
+                const SizedBox(width: 10),
+                const Text(
+                  'Workspace',
+                  style: TextStyle(color: muted, fontSize: 11),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Text('/', style: TextStyle(color: line)),
+                ),
+                Text(
+                  pageNames[page],
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              const Spacer(),
+              Tag(
+                'DEMO',
+                color: amber,
+                background: const Color(0xFFFFF3DC),
+                icon: Icons.science_outlined,
+              ),
+              if (!compact) ...[
+                const SizedBox(width: 12),
+                Text(
+                  fromApi ? 'API · data simulasi' : 'Data contoh · tanpa IoT',
+                  style: const TextStyle(fontSize: 10, color: muted),
+                ),
+              ],
+              const SizedBox(width: 10),
+              if (Navigator.canPop(context))
+                IconButton(
+                  tooltip: 'Kembali ke halaman awal',
+                  onPressed: () => Navigator.maybePop(context),
+                  icon: const Icon(Icons.logout_rounded, size: 19),
+                ),
+              IconButton(
+                tooltip: 'Muat ulang data demo',
+                onPressed: loading ? null : refresh,
+                icon: loading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded, size: 19),
+              ),
+            ],
+          ),
         ),
-      ],
+      ),
     ),
   );
 
@@ -609,222 +718,25 @@ class _FleetHomeState extends State<FleetHome> {
     ),
   );
 
-  Widget mobileDashboard() => Column(
+  Widget mobileDashboard() => FleetOverview(
     key: const ValueKey('mobile-dashboard'),
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'REV RENTAL · JAKARTA',
-                  style: TextStyle(
-                    color: muted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  'Armada Anda,\ndalam kendali.',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            tooltip: 'Tinjau peringatan',
-            onPressed: () => setState(() => page = 2),
-            icon: Badge(
-              label: Text('$openAlerts'),
-              child: const Icon(Icons.notifications_outlined, size: 25),
-            ),
-          ),
-        ],
+    vehicles: vehicles,
+    selected: selected,
+    openAlerts: openAlerts,
+    onSelect: (vehicle) => selectVehicle(vehicle),
+    onDetail: () => selectVehicle(selected, detail: true),
+    onMap: () => Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MapExperience(vehicles: vehicles, selected: selected),
       ),
-      const SizedBox(height: 18),
-      Row(
-        children: [
-          for (final item in [
-            ('Unit', '${vehicles.length}', Icons.directions_car_outlined),
-            (
-              'Berjalan',
-              '${vehicles.where((v) => v.status == 'moving').length}',
-              Icons.route_outlined,
-            ),
-            ('Perhatian', '$openAlerts', Icons.radar_rounded),
-          ])
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Surface(
-                  padding: const EdgeInsets.all(13),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(item.$3, color: green, size: 18),
-                      const SizedBox(height: 8),
-                      Text(
-                        item.$2,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        item.$1,
-                        style: const TextStyle(color: muted, fontSize: 10),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-      const SizedBox(height: 18),
-      Surface(
-        padding: const EdgeInsets.all(7),
-        child: Column(
-          children: [
-            SizedBox(
-              height: 290,
-              child: FleetMap(
-                vehicles: vehicles,
-                selected: selected,
-                onSelect: (v) => selectVehicle(v),
-              ),
-            ),
-            Row(
-              children: [
-                const SizedBox(width: 10),
-                const Icon(Icons.location_on_outlined, size: 14, color: green),
-                const SizedBox(width: 5),
-                const Expanded(
-                  child: Text(
-                    'Posisi unit · data simulasi',
-                    style: TextStyle(fontSize: 10, color: muted),
-                  ),
-                ),
-                TextButton(
-                  key: const ValueKey('open-map'),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          MapExperience(vehicles: vehicles, selected: selected),
-                    ),
-                  ),
-                  child: const Text(
-                    'Buka peta',
-                    style: TextStyle(fontSize: 11),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 16),
-      Surface(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        selected.name,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${selected.plate} · ${selected.driver}',
-                        style: const TextStyle(fontSize: 10, color: muted),
-                      ),
-                    ],
-                  ),
-                ),
-                Tag(selected.statusLabel),
-              ],
-            ),
-            const SizedBox(height: 15),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${selected.energy == null ? '—' : '${selected.energy}%'} ${selected.ev ? 'baterai' : 'BBM'} · ${selected.speed ?? '—'} km/jam',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: green,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => selectVehicle(selected, detail: true),
-                  child: const Text(
-                    'Detail unit →',
-                    style: TextStyle(fontSize: 11),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 16),
-      InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () => setState(() => page = 3),
-        child: Surface(
-          color: mint,
-          padding: const EdgeInsets.all(17),
-          child: Row(
-            children: [
-              const Icon(Icons.auto_awesome_rounded, color: green),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Mulai dengan langkah yang tepat.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Lihat prioritas workspace bersama Rev AI.',
-                      style: TextStyle(fontSize: 10, color: muted),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right, color: green),
-            ],
-          ),
-        ),
-      ),
-      const SizedBox(height: 20),
-      const Text(
-        'Demo workspace · tanpa koneksi ke kendaraan fisik.',
-        style: TextStyle(color: muted, fontSize: 10),
-      ),
-    ],
+    ),
+    onAlerts: () => setState(() => page = 2),
+    onFleet: () => setState(() => page = 1),
+    onFleetFilter: (value) => setState(() {
+      filter = value;
+      query = '';
+      page = 1;
+    }),
   );
 
   Widget dashboard(bool compact, bool desktop) => compact
@@ -834,9 +746,9 @@ class _FleetHomeState extends State<FleetHome> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             heading(
-              'YOUR FLEET, CONNECTED.',
-              'Semua bergerak. Anda memegang kendali.',
-              'Satu ruang untuk armada, perjalanan, dan keputusan yang lebih baik.',
+              'REV RENTAL · JAKARTA',
+              'Ringkasan armada',
+              'Pantau posisi, kondisi kendaraan, dan peringatan terbaru.',
               compact,
               trailing: OutlinedButton.icon(
                 onPressed: () => setState(() => page = 1),
@@ -911,7 +823,7 @@ class _FleetHomeState extends State<FleetHome> {
       (
         'Total armada',
         vehicles.length.toString().padLeft(2, '0'),
-        'Unit dalam workspace',
+        'Kendaraan terdaftar',
         Icons.directions_car_outlined,
         green,
       ),
@@ -922,7 +834,7 @@ class _FleetHomeState extends State<FleetHome> {
             .length
             .toString()
             .padLeft(2, '0'),
-        'Status pada data contoh',
+        'Status terakhir diterima',
         Icons.route_outlined,
         green,
       ),
@@ -974,15 +886,6 @@ class _FleetHomeState extends State<FleetHome> {
                   ),
                 ),
                 const Spacer(),
-                Container(
-                  width: 48,
-                  height: 24,
-                  alignment: Alignment.bottomCenter,
-                  child: CustomPaint(
-                    size: const Size(48, 24),
-                    painter: MiniTrend(color: data.$5),
-                  ),
-                ),
               ],
             ),
             const SizedBox(height: 6),
@@ -1154,7 +1057,7 @@ class _FleetHomeState extends State<FleetHome> {
     key: const ValueKey('fleet-search'),
     onChanged: (value) => setState(() => query = value),
     decoration: const InputDecoration(
-      hintText: 'Cari unit, plat, atau pengemudi',
+      hintText: 'Cari kendaraan, pelat, atau pengemudi',
       prefixIcon: Icon(Icons.search_rounded, size: 18, color: muted),
     ),
   );
@@ -1168,12 +1071,14 @@ class _FleetHomeState extends State<FleetHome> {
                 'Bensin',
                 if (vehicles.any((v) => v.powertrain == 'diesel')) 'Diesel',
                 'Offline',
+                'Berjalan',
+                'Energi rendah',
               ]
               .map(
                 (label) => Padding(
                   padding: const EdgeInsets.only(right: 7),
                   child: ChoiceChip(
-                    label: Text(label, style: const TextStyle(fontSize: 10)),
+                    label: Text(label, style: const TextStyle(fontSize: 12)),
                     selected: filter == label,
                     showCheckmark: false,
                     selectedColor: mint,
@@ -1183,7 +1088,7 @@ class _FleetHomeState extends State<FleetHome> {
                       color: filter == label ? green : muted,
                       fontWeight: FontWeight.w600,
                     ),
-                    visualDensity: VisualDensity.compact,
+                    visualDensity: VisualDensity.standard,
                     onSelected: (_) => setState(() => filter = label),
                   ),
                 ),
@@ -1228,14 +1133,14 @@ class _FleetHomeState extends State<FleetHome> {
                   Text(
                     v.plate,
                     style: const TextStyle(
-                      fontSize: 12,
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 5),
                   Text(
                     v.name,
-                    style: const TextStyle(fontSize: 10, color: muted),
+                    style: const TextStyle(fontSize: 12, color: muted),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -1284,26 +1189,93 @@ class _FleetHomeState extends State<FleetHome> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       heading(
-        'FLEET DIRECTORY',
-        'Kenali setiap unit.',
-        'Cari armada dan buka detail energi, pengemudi, serta aktivitasnya.',
+        'REV RENTAL · JAKARTA',
+        'Armada',
+        'Cari kendaraan, nomor pelat, atau pengemudi.',
         compact,
       ),
-      Surface(
-        child: Column(
-          children: [
-            searchField(),
-            const SizedBox(height: 16),
-            filters(),
-            const SizedBox(height: 16),
-            if (filtered.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(35),
-                child: Text('Tidak ada unit yang cocok. Coba pencarian lain.'),
+      Column(
+        children: [
+          searchField(),
+          const SizedBox(height: 16),
+          filters(),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${filtered.length} kendaraan',
+                  style: const TextStyle(color: muted, fontSize: 12),
+                ),
               ),
-            for (final v in filtered) vehicleRow(v),
-          ],
-        ),
+              PopupMenuButton<String>(
+                tooltip: 'Urutkan kendaraan',
+                initialValue: fleetOrder,
+                onSelected: (value) => setState(() => fleetOrder = value),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'plate', child: Text('Nomor pelat')),
+                  PopupMenuItem(
+                    value: 'energy',
+                    child: Text('Energi terendah'),
+                  ),
+                  PopupMenuItem(
+                    value: 'speed',
+                    child: Text('Kecepatan tertinggi'),
+                  ),
+                ],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 14,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.sort_rounded, size: 18, color: green),
+                      const SizedBox(width: 8),
+                      Text(switch (fleetOrder) {
+                        'energy' => 'Energi terendah',
+                        'speed' => 'Kecepatan tertinggi',
+                        _ => 'Nomor pelat',
+                      }, style: const TextStyle(fontSize: 12, color: ink)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (filtered.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(35),
+              child: Text('Tidak ada unit yang cocok. Coba pencarian lain.'),
+            ),
+          LayoutBuilder(
+            builder: (context, box) {
+              final columns = box.maxWidth >= 1000
+                  ? 3
+                  : box.maxWidth >= 650
+                  ? 2
+                  : 1;
+              final width = (box.maxWidth - (columns - 1) * 16) / columns;
+              return Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  for (final v in filtered)
+                    SizedBox(
+                      width: width,
+                      child: FleetVehicleCard(
+                        key: ValueKey('vehicle-${v.id}'),
+                        vehicle: v,
+                        selected: selected.id == v.id,
+                        onTap: () => selectVehicle(v, detail: true),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
       ),
     ],
   );
@@ -1313,9 +1285,9 @@ class _FleetHomeState extends State<FleetHome> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       heading(
-        'ATTENTION CENTER',
-        'Lebih cepat tahu. Lebih tepat bertindak.',
-        '$openAlerts peringatan perlu ditinjau. Seluruh event di halaman ini adalah simulasi.',
+        'TINJAU KEJADIAN',
+        'Peringatan',
+        '$openAlerts peringatan perlu ditinjau. Data pada mode demo merupakan simulasi.',
         compact,
       ),
       const Surface(
@@ -1326,7 +1298,7 @@ class _FleetHomeState extends State<FleetHome> {
             SizedBox(width: 13),
             Expanded(
               child: Text(
-                'Tinjau bukti dan hubungi tim lapangan sebelum mengambil tindakan. Dalam mode API, keputusan tersimpan pada server dan audit.',
+                'Periksa catatan kejadian sebelum menandai peringatan sebagai ditinjau.',
                 style: TextStyle(fontSize: 12, color: green),
               ),
             ),
@@ -1334,7 +1306,38 @@ class _FleetHomeState extends State<FleetHome> {
         ),
       ),
       const SizedBox(height: 20),
-      for (final a in alerts)
+      SizedBox(
+        width: compact ? double.infinity : 420,
+        child: SegmentedButton<String>(
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(value: 'Semua', label: Text('Semua')),
+            ButtonSegment(value: 'Aktif', label: Text('Aktif')),
+            ButtonSegment(value: 'Ditinjau', label: Text('Ditinjau')),
+          ],
+          selected: {alertFilter},
+          onSelectionChanged: (value) =>
+              setState(() => alertFilter = value.first),
+        ),
+      ),
+      const SizedBox(height: 20),
+      if (!alerts.any(
+        (a) =>
+            alertFilter == 'Semua' ||
+            (alertFilter == 'Ditinjau') == reviewed(a),
+      ))
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 28),
+          child: Text(
+            'Tidak ada peringatan pada filter ini.',
+            style: TextStyle(color: muted),
+          ),
+        ),
+      for (final a in alerts.where(
+        (a) =>
+            alertFilter == 'Semua' ||
+            (alertFilter == 'Ditinjau') == reviewed(a),
+      ))
         Padding(
           padding: const EdgeInsets.only(bottom: 14),
           child: Surface(
@@ -1395,14 +1398,15 @@ class _FleetHomeState extends State<FleetHome> {
                         ),
                       ),
                     ),
-                    OutlinedButton(
-                      onPressed: reviewed(a) || pendingAlerts.contains(a.id)
-                          ? null
-                          : () => acknowledge(a),
-                      child: const Text(
-                        'Tandai ditinjau',
-                        style: TextStyle(fontSize: 11),
-                      ),
+                    ActionFeedbackButton(
+                      label: 'Tandai ditinjau',
+                      completedLabel: 'Ditinjau',
+                      phase: reviewed(a)
+                          ? ActionPhase.complete
+                          : pendingAlerts.contains(a.id)
+                          ? ActionPhase.busy
+                          : ActionPhase.ready,
+                      onPressed: () => acknowledge(a),
                     ),
                   ],
                 ),
@@ -1420,11 +1424,11 @@ class _FleetHomeState extends State<FleetHome> {
       children: [
         const Row(
           children: [
-            Icon(Icons.auto_awesome, color: green, size: 20),
+            Icon(Icons.insights_outlined, color: green, size: 20),
             SizedBox(width: 9),
             Expanded(
               child: Text(
-                'Selangkah lebih siap.',
+                'Prioritas armada',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
               ),
             ),
@@ -1433,7 +1437,7 @@ class _FleetHomeState extends State<FleetHome> {
         ),
         const SizedBox(height: 20),
         const Text(
-          'Prioritas yang jelas.\nOperasi yang lebih tenang.',
+          'Yang perlu ditinjau',
           style: TextStyle(
             fontSize: 24,
             height: 1.25,
@@ -1443,7 +1447,7 @@ class _FleetHomeState extends State<FleetHome> {
         ),
         const SizedBox(height: 13),
         const Text(
-          'Rev AI membantu menyusun langkah berikutnya, dengan kendali tetap di tangan Anda.',
+          'Lihat kendaraan offline, energi rendah, dan penugasan pengemudi.',
           style: TextStyle(fontSize: 11, height: 1.8, color: muted),
         ),
         const SizedBox(height: 19),
@@ -1472,7 +1476,7 @@ class _FleetHomeState extends State<FleetHome> {
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('Buka Rev AI', style: TextStyle(fontSize: 12)),
+                Text('Buka analisis', style: TextStyle(fontSize: 12)),
                 SizedBox(width: 10),
                 Icon(Icons.arrow_forward, size: 16),
               ],
@@ -1494,18 +1498,26 @@ class Brand extends StatelessWidget {
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
+        SvgPicture.asset(
+          'assets/brand/revtrack-mark.svg',
           width: small ? 28 : 32,
           height: small ? 28 : 32,
-          decoration: BoxDecoration(
-            color: green,
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: const Icon(Icons.near_me_rounded, color: lime, size: 21),
+          excludeFromSemantics: true,
         ),
         const SizedBox(width: 9),
-        Text(
-          'revtrack',
+        Text.rich(
+          const TextSpan(
+            children: [
+              TextSpan(
+                text: 'Rev',
+                style: TextStyle(color: ink),
+              ),
+              TextSpan(
+                text: 'Track',
+                style: TextStyle(color: green),
+              ),
+            ],
+          ),
           style: TextStyle(
             fontSize: small ? 21 : 25,
             letterSpacing: -1.2,
@@ -1534,34 +1546,6 @@ class LegendDot extends StatelessWidget {
       Text(label, style: const TextStyle(fontSize: 9, color: muted)),
     ],
   );
-}
-
-class MiniTrend extends CustomPainter {
-  const MiniTrend({required this.color});
-  final Color color;
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(0, 19)
-      ..lineTo(8, 14)
-      ..lineTo(16, 17)
-      ..lineTo(25, 8)
-      ..lineTo(33, 11)
-      ..lineTo(40, 5)
-      ..lineTo(48, 1);
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color.withValues(alpha: .7)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.6
-        ..strokeJoin = StrokeJoin.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant MiniTrend oldDelegate) =>
-      color != oldDelegate.color;
 }
 
 class VehicleDetail extends StatelessWidget {
@@ -1632,7 +1616,7 @@ class VehicleDetail extends StatelessWidget {
               Expanded(
                 child: detailMetric(
                   v.energy == null ? '—' : '${v.energy}%',
-                  v.ev ? 'Baterai · contoh' : 'Bahan bakar · contoh',
+                  v.ev ? 'Baterai' : 'Bahan bakar',
                   v.ev
                       ? Icons.battery_charging_full
                       : Icons.local_gas_station_outlined,
@@ -1641,14 +1625,14 @@ class VehicleDetail extends StatelessWidget {
               Expanded(
                 child: detailMetric(
                   v.speed?.toString() ?? '—',
-                  'km/jam · contoh',
+                  'km/jam',
                   Icons.speed_rounded,
                 ),
               ),
               Expanded(
                 child: detailMetric(
                   v.range == null ? '—' : '${v.range} km',
-                  'Estimasi jarak · contoh',
+                  'Estimasi jarak',
                   Icons.route_outlined,
                 ),
               ),
@@ -1734,7 +1718,7 @@ class VehicleDetail extends StatelessWidget {
                         ),
                       ),
                       const Text(
-                        'Pengemudi · profil contoh',
+                        'Pengemudi',
                         style: TextStyle(fontSize: 9, color: muted),
                       ),
                     ],

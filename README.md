@@ -234,7 +234,7 @@ Internal service memakai kontrak **Protobuf/gRPC atau event schema berversi** se
 
 Standar yang kita ambil dari engineering skala besar adalah **correctness, bukti performa, observability, batas resource, recovery, dan code review**. Tidak ada klaim “FAANG-grade” hanya karena memakai empat bahasa. Setiap ADR memuat masalah, opsi, trade-off, keputusan, benchmark dan kondisi evaluasi ulang. Target throughput, P95/P99, memory/device, reconnect burst dan biaya/unit harus dibuktikan dengan profil beban, fuzz/property tests, race tests, contract tests, tenant isolation tests, serta restore/chaos drills. Rincian ada di [rancangan backend dan DSA](docs/07-backend-engineering.md).
 
-Mapbox Flutter stable yang ditinjau adalah **2.31.1** untuk Android/iOS; dukungan web v3 masih prarilis saat penyusunan. Preview web starter memakai peta skematik berlabel demo. Integrasi web produksi bisa mengevaluasi Mapbox GL JS atau SDK Flutter v3 setelah stabil dan tervalidasi. [SDK resmi](https://pub.dev/packages/mapbox_maps_flutter)
+Mapbox Flutter sudah diperbarui ke **3.0.0 stable** untuk Android/iOS dengan dukungan web melalui paket federated. RevTrack memakai SDK native pada mobile dan integrasi Mapbox GL JS 3.32.0 pada preview web; tanpa token, peta skematik berlabel demo tetap tersedia. [SDK resmi](https://pub.dev/packages/mapbox_maps_flutter)
 
 Logo/attribution serta akses opt-out telemetry Mapbox harus tetap tersedia. Maps SDK tidak otomatis menyediakan seluruh pengalaman turn-by-turn; validasi SDK/platform bridge, voice, offline, harga dan cakupan jalan secara terpisah. [Persyaratan Mapbox](https://docs.mapbox.com/flutter/maps/guides/)
 
@@ -438,7 +438,7 @@ RevTrack/
 
 ### Jalankan fullstack di ponsel
 
-Prasyarat: **Flutter SDK, Go 1.25+, Python 3**, Android SDK/platform-tools untuk Android; Xcode lengkap dan signing sesuai target untuk iOS. Dari root repo:
+Prasyarat: **Flutter 3.47.6 stable, JDK 27, Go 1.27.1+, Python 3**, Android SDK/platform-tools untuk Android; Xcode lengkap dan signing sesuai target untuk iOS. Dari root repo:
 
 ```bash
 cd apps/mobile

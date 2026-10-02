@@ -22,7 +22,9 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(const RevTrackApp());
+    await tester.pumpWidget(const RevTrackApp(enableWelcomeVideo: false));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('welcome-demo')));
     await tester.pumpAndSettle();
   }
 
@@ -33,10 +35,7 @@ void main() {
       expect(find.text('DEMO'), findsOneWidget);
       expect(find.text('Peta skematik · DEMO'), findsOneWidget);
       expect(find.textContaining('Mapbox belum aktif'), findsOneWidget);
-      expect(
-        find.text('Semua bergerak. Anda memegang kendali.'),
-        findsOneWidget,
-      );
+      expect(find.text('Ringkasan armada'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -95,10 +94,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Hyundai IONIQ 5'), findsOneWidget);
     expect(find.text('Toyota Avanza'), findsNothing);
-    await tester.tap(find.text('Rev AI').last);
+    await tester.tap(find.text('Analisis').last);
     await tester.pumpAndSettle();
     expect(
-      find.text('Analisis aturan · bukan model generatif'),
+      find.textContaining('Ringkasan dihitung dari data armada'),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
@@ -112,6 +111,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('26%'), findsWidgets);
     expect(find.text('BYD Atto 3'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('status panel opens the fleet with the matching filter', (
+    tester,
+  ) async {
+    await start(tester, size: const Size(390, 844));
+    await tester.tap(find.byKey(const ValueKey('fleet-stat-Offline')));
+    await tester.pumpAndSettle();
+    expect(find.text('Toyota Avanza'), findsNothing);
+    expect(find.widgetWithText(ChoiceChip, 'Offline'), findsOneWidget);
+    expect(
+      tester
+          .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Offline'))
+          .selected,
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('review filter only shows acknowledged alerts', (tester) async {
+    await start(tester, size: const Size(390, 844));
+    await tester.tap(find.text('Peringatan').last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Tandai ditinjau').first);
+    await tester.tap(find.text('Tandai ditinjau').first);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byType(SegmentedButton<String>));
+    final selector = tester.widget<SegmentedButton<String>>(
+      find.byType(SegmentedButton<String>),
+    );
+    selector.onSelectionChanged!({'Ditinjau'});
+    await tester.pumpAndSettle();
+    expect(find.text('✓ Ditinjau · sesi lokal'), findsOneWidget);
+    expect(find.text('Menunggu tinjauan'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -136,7 +170,7 @@ void main() {
     await start(tester, size: const Size(390, 844));
     await tester.tap(find.text('Operasi').last);
     await tester.pumpAndSettle();
-    expect(find.text('Hubungkan workspace ke API'), findsOneWidget);
+    expect(find.text('Data operasional belum tersedia'), findsOneWidget);
     expect(find.text('Booking baru'), findsNothing);
     expect(tester.takeException(), isNull);
   });

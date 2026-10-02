@@ -6,6 +6,7 @@ import 'package:pointer_interceptor/pointer_interceptor.dart';
 import '../core/design.dart';
 import '../core/fleet.dart';
 import 'fleet_map.dart';
+import 'glass_surface.dart';
 
 /// Address/place search intentionally uses Geocoding v6. Mapbox Search Box's
 /// documented POI geography does not include Indonesia. Results remain in memory.
@@ -342,13 +343,9 @@ class _MapExperienceState extends State<MapExperience> {
   }
 
   Widget panel(Widget child) => PointerInterceptor(
-    child: Material(
-      color: Colors.white,
-      elevation: 7,
-      shadowColor: ink.withValues(alpha: .12),
-      borderRadius: BorderRadius.circular(19),
-      clipBehavior: Clip.antiAlias,
-      child: child,
+    child: GlassSurface(
+      radius: 24,
+      child: Material(color: Colors.transparent, child: child),
     ),
   );
 
@@ -421,7 +418,7 @@ class _MapExperienceState extends State<MapExperience> {
                           search(text.trim(), ++searchVersion);
                         },
                         decoration: InputDecoration(
-                          fillColor: Colors.white,
+                          fillColor: Colors.transparent,
                           hintText: 'Cari alamat atau wilayah',
                           prefixIcon: const Icon(
                             Icons.search_rounded,

@@ -9,11 +9,12 @@ Catatan ini membedakan pemeriksaan software lokal dengan validasi produksi dan k
 | Go API: `go test -race ./...` | Lulus pada pemeriksaan ulang: 20 fungsi test, mencakup isolasi tenant, replay, persistence, rental/maintenance, report dan CSV |
 | Go API: `go vet ./...` | Lulus pada pemeriksaan ulang |
 | Smoke HTTP API | Flow fleet, telemetry, assignment, alert, rental→return, work order→complete serta persistence restart telah diperiksa |
-| Launcher Python | Validasi syntax/help, pemilihan target, penolakan desktop dan guard port; mode native belum dijalankan |
+| Launcher Python | Help lulus pada Python 3.14.8; mode native sudah dijalankan dengan Go API, simulator fleet dan Android `emulator-5554`; API health HTTP 200 |
 | Flutter `analyze` dan tests | Analyze: tidak ada isu. Sebelas tests lulus: tujuh widget tests termasuk layout ponsel 390×844/peta/Operasi, empat tests data/API |
 | Android APK build | Lulus `flutter build apk --debug --dart-define-from-file=../../.local/mobile.json`; APK lokal di `apps/mobile/build/app/outputs/flutter-apk/app-debug.apk` |
-| Android emulator/perangkat runtime | Tidak dijalankan, mengikuti permintaan pengguna untuk melakukan pengujian manual sendiri |
-| iOS build | Belum dijalankan: Xcode tidak lengkap dan CocoaPods belum tersedia pada mesin pengembangan |
+| Android emulator/perangkat runtime | Aplikasi dibuka pada Pixel_10_Pro, Android 17/API 37 arm64 dengan page size 16 KB; dashboard dan peta Mapbox native dirender. Ini smoke test startup, bukan pemeriksaan semua workflow native |
+| iOS build | Belum dijalankan: Xcode lengkap belum terpasang; CocoaPods 1.17.0 sudah tersedia dan halaman Xcode App Store sudah dibuka |
+| Flutter web build | Lulus setelah upgrade Flutter dan Mapbox; verifikasi browser lama tidak diklaim sebagai pengujian ulang semua interaksi web |
 | Mapbox browser | Style, tiles dan marker asli sudah diamati pada QA; bukan verifikasi SDK Android/iOS |
 | PostgreSQL/PostGIS migration | Belum dijalankan; service demo memakai snapshot JSON, bukan SQL |
 | GitHub Actions | Workflow Go/Flutter disediakan dengan referensi action SHA; hasil CI remote belum diklaim |
@@ -24,7 +25,11 @@ Backend menjaga pemisahan kredensial pengguna/perangkat, binding tenant/device s
 
 Snapshot lokal memakai file private dan atomic rename untuk satu proses. Pengujian restart/rollback tidak membuktikan failover, enkripsi-at-rest aplikasi atau recovery power loss produksi. Reports menyimpulkan sampel tersimpan, tidak mengklaim trip lengkap, kWh/consumption atau pembuktian fraud.
 
-Android dipin ke AGP 8.13.2, Gradle 8.14.4, Kotlin 2.3.20, compile/target SDK 36. Kombinasi AGP 9 bawaan Flutter 3.44 gagal karena migrasi built-in Kotlin belum seragam antar-plugin native. Build AGP 8 lulus dengan peringatan migrasi untuk versi Flutter mendatang. Ikuti [panduan Flutter](https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin) dan [catatan AGP](https://developer.android.com/build/releases/agp-8-13-0-release-notes) ketika memperbarui toolchain; jangan menaikkan dependency tanpa build ulang. Build debug memakai signing development, bukan paket rilis toko.
+Toolchain diperbarui ke Flutter 3.47.6/Dart 3.13.5, JDK 27, AGP 9.4.1, Gradle 9.8.0, Kotlin 2.4.20, Mapbox Flutter 3.0.0, serta compile/target SDK 37. Backend diuji dengan Go 1.27.1. Gradle Wrapper juga diregenerasi. Terminal zsh/bash baru memakai JDK, Go dan Python Homebrew; konfigurasi Flutter menunjuk JDK 27.
+
+Kegagalan awal `Failed to exec spawn helper` direproduksi: daemon Java 21 masih berjalan setelah JDK bawaan Android Studio diperbarui ke Java 25. Daemon lama dihentikan, kemudian toolchain diperbarui bersama. Gradle 9.8 mendukung JDK 27 menurut [matriks resmi](https://docs.gradle.org/current/userguide/compatibility.html).
+
+Flutter Gradle Plugin tetap memerlukan `android.newDsl=false`; `android.builtInKotlin=true` sudah aktif dan plugin Kotlin Android tidak diterapkan pada modul aplikasi. Build dapat menampilkan peringatan KGP untuk `mapbox_maps_flutter_mobile`: pemeriksa Flutter membaca script melalui regex, termasuk deklarasi plugin di dalam kondisi AGP < 9; Mapbox melewati penerapan plugin tersebut pada AGP 9. Analyzer bersih setelah migrasi pemanggilan API style Mapbox 3.0. Dua dependency transitif (`material_color_utilities` dan `test_api`) tetap mengikuti versi yang dipin SDK Flutter. Build debug memakai signing development, bukan paket rilis toko.
 
 ## Belum tervalidasi
 
