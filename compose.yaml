@@ -1,0 +1,26 @@
+name: revtrack
+services:
+  api:
+    build: ./services/api
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8080"
+      REVTRACK_DEMO_TOKEN: ${REVTRACK_DEMO_TOKEN:?Set the staging user token}
+      REVTRACK_DEVICE_TOKEN: ${REVTRACK_DEVICE_TOKEN:?Set a different device token}
+      REVTRACK_DATA_FILE: /data/state.json
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - fleet-data:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  fleet-data:

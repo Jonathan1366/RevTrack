@@ -77,7 +77,7 @@ def main():
     token_path.chmod(0o600)
     env = os.environ.copy()
     env.update(REVTRACK_DEMO_TOKEN=config['DEMO_API_TOKEN'], REVTRACK_DEVICE_TOKEN=token_path.read_text().strip(),
-               REVTRACK_DATA_FILE=env.get('REVTRACK_DATA_FILE', str(LOCAL / 'fleet-state.json')), PORT='8080')
+               REVTRACK_DATA_FILE=env.get('REVTRACK_DATA_FILE', str(LOCAL / 'fleet-state.json')), HOST='127.0.0.1', PORT='8080')
     env.setdefault('GOCACHE', str(LOCAL / 'go-cache'))
     binaries = LOCAL / 'bin'
     binaries.mkdir(exist_ok=True)
